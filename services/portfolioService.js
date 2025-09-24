@@ -1,5 +1,6 @@
 const Portfolio = require('../models/Portfolio');
 const AIService = require('./aiService');
+const MarketDataService = require('./marketDataService'); 
 
 class PortfolioService {
     async calculatePortfolioMetrics(portfolio) {
@@ -89,11 +90,25 @@ class PortfolioService {
     async getPortfolioAnalysis(userId) {
         try {
             const portfolio = await Portfolio.findOne({ userId }).populate('userId');
-            if (!portfolio) throw new Error('Portfolio not found');
+            if (!portfolio || portfolio.holdings.length === 0) {
+                 throw new Error('Portfolio not found or is empty');
+            }
 
+            // 1. GET LIVE PRICES
+            const tickers = portfolio.holdings.map(h => h.ticker);
+            const livePrices = await MarketDataService.fetchCurrentPrices(tickers);
+
+            // 2. UPDATE PORTFOLIO IN MEMORY WITH LIVE PRICES
+            portfolio.holdings.forEach(holding => {
+                if (livePrices[holding.ticker]) {
+                    holding.currentPrice = livePrices[holding.ticker];
+                }
+            });
+
+            // 3. RECALCULATE METRICS WITH LIVE DATA
             const metrics = await this.calculatePortfolioMetrics(portfolio);
             
-            // Get AI analysis
+            // 4. CALL AI WITH COMPLETE, UP-TO-DATE DATA
             const aiAnalysis = await AIService.analyzePortfolio({
                 holdings: portfolio.holdings,
                 metrics: metrics,

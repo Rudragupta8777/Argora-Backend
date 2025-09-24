@@ -4,6 +4,7 @@ const User = require('../models/User');
 const PortfolioService = require('../services/portfolioService');
 const SimulationService = require('../services/simulationService');
 const BenchmarkService = require('../services/benchmarkService');
+const MarketDataService = require('../services/marketDataService');
 
 const botController = {
     async sendMessage(req, res) {
@@ -124,6 +125,9 @@ const botController = {
         const portfolioAnalysis = await PortfolioService.getPortfolioAnalysis(userId);
         const user = await User.findById(userId);
 
+        // FETCH DYNAMIC MARKET CONDITIONS
+        const marketConditions = await MarketDataService.fetchMarketConditions();
+
         return {
             userProfile: {
                 riskProfile: user.preferences.riskProfile,
@@ -135,12 +139,9 @@ const botController = {
                 diversification: portfolioAnalysis.basicMetrics.diversificationScore,
                 performance: portfolioAnalysis.basicMetrics.totalGainLossPercent
             },
-            currentMarketConditions: {
-                // This would include real market data
-                generalSentiment: 'neutral',
-                notableEvents: []
-            },
-            conversationHistory: conversationHistory.slice(-10) // Last 10 messages
+            // USE THE DYNAMIC DATA HERE
+            currentMarketConditions: marketConditions, 
+            conversationHistory: conversationHistory.slice(-10)
         };
     }
 };
