@@ -8,5 +8,6 @@ router.post('/message', authMiddleware.authenticateToken, validationMiddleware.v
 router.post('/simulate', authMiddleware.authenticateToken, botController.runSimulation);
 router.get('/benchmark', authMiddleware.authenticateToken, botController.getBenchmark);
 router.get('/conversations', authMiddleware.authenticateToken, botController.getConversations);
+router.get('/conversations/:id', authMiddleware.authenticateToken, botController.getConversationById);
 
 module.exports = router;

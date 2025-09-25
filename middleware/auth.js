@@ -1,35 +1,27 @@
 const jwt = require('jsonwebtoken');
+const User = require('../models/User');
 
 const authMiddleware = {
-    authenticateToken: (req, res, next) => {
+    authenticateToken: async (req, res, next) => {
         const authHeader = req.headers['authorization'];
-        const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+        const token = authHeader && authHeader.split(' ')[1]; // Expects "Bearer <YOUR_CUSTOM_TOKEN>"
 
         if (!token) {
             return res.status(401).json({ error: 'Access token required' });
         }
 
-        jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-            if (err) {
-                return res.status(403).json({ error: 'Invalid token' });
-            }
-            req.user = user;
+        try {
+            // Verify the token using your JWT_SECRET
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            
+            // Attach user info to the request object
+            // The decoded object will contain { id: user._id, email: user.email }
+            req.user = { id: decoded.id }; 
+            
             next();
-        });
-    },
-
-    optionalAuth: (req, res, next) => {
-        const authHeader = req.headers['authorization'];
-        const token = authHeader && authHeader.split(' ')[1];
-
-        if (token) {
-            jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-                if (!err) {
-                    req.user = user;
-                }
-            });
+        } catch (err) {
+            return res.status(403).json({ error: 'Invalid or expired token' });
         }
-        next();
     }
 };
 

@@ -94,34 +94,41 @@ class PortfolioService {
                  throw new Error('Portfolio not found or is empty');
             }
 
-            // 1. GET LIVE PRICES
-            const tickers = portfolio.holdings.map(h => h.ticker);
-            const livePrices = await MarketDataService.fetchCurrentPrices(tickers);
-
-            // 2. UPDATE PORTFOLIO IN MEMORY WITH LIVE PRICES
-            portfolio.holdings.forEach(holding => {
-                if (livePrices[holding.ticker]) {
-                    holding.currentPrice = livePrices[holding.ticker];
-                }
-            });
-
-            // 3. RECALCULATE METRICS WITH LIVE DATA
+            // 1. CALL THE AI FIRST TO GET ANALYSIS AND LIVE PRICES
             const metrics = await this.calculatePortfolioMetrics(portfolio);
-            
-            // 4. CALL AI WITH COMPLETE, UP-TO-DATE DATA
             const aiAnalysis = await AIService.analyzePortfolio({
                 holdings: portfolio.holdings,
                 metrics: metrics,
                 userRiskProfile: portfolio.userId.preferences.riskProfile
             });
 
+            // 2. UPDATE YOUR DATABASE WITH PRICES FROM THE AI
+            if (aiAnalysis.holdings_with_real_time_prices) {
+                aiAnalysis.holdings_with_real_time_prices.forEach(aiHolding => {
+                    const dbHolding = portfolio.holdings.find(h => h.ticker === aiHolding.ticker);
+                    if (dbHolding) {
+                        dbHolding.currentPrice = aiHolding.currentPrice;
+                    }
+                });
+
+                // Recalculate metrics with the new prices
+                const finalMetrics = await this.calculatePortfolioMetrics(portfolio);
+                portfolio.totalValue = finalMetrics.totalValue;
+                
+                // Save the updated portfolio with live prices back to the database
+                await portfolio.save();
+            }
+
+            // 3. RETURN THE FINAL, COMBINED DATA
             return {
-                basicMetrics: metrics,
+                basicMetrics: await this.calculatePortfolioMetrics(portfolio), // Recalculate one last time
                 aiAnalysis: aiAnalysis,
                 healthScore: this.calculateHealthScore(metrics, aiAnalysis),
                 timestamp: new Date()
             };
+
         } catch (error) {
+            console.error("Error in getPortfolioAnalysis:", error);
             throw error;
         }
     }

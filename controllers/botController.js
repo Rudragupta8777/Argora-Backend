@@ -6,39 +6,45 @@ const SimulationService = require('../services/simulationService');
 const BenchmarkService = require('../services/benchmarkService');
 const MarketDataService = require('../services/marketDataService');
 
+function isPortfolioQuery(message) {
+    const keywords = [
+        'portfolio', 'holding', 'stock', 'investment', 'invest',
+        'asset', 'profit', 'loss', 'gain', 'risk', 'diversify', 'my'
+    ];
+    const lowerCaseMessage = message.toLowerCase();
+    return keywords.some(keyword => lowerCaseMessage.includes(keyword));
+}
+
 const botController = {
     async sendMessage(req, res) {
         try {
             const { message, conversationId } = req.body;
             const userId = req.user.id;
 
-            // Get or create conversation
-            let conversation;
-            if (conversationId) {
-                conversation = await Conversation.findById(conversationId);
-            } else {
-                conversation = new Conversation({
-                    userId: userId,
-                    messages: [],
-                    title: 'New Conversation'
-                });
+            let conversation = await Conversation.findById(conversationId);
+            if (!conversation) {
+                // If no conversationId is provided, find the most recent one or create new
+                conversation = await Conversation.findOne({ userId }).sort({ updatedAt: -1 });
+                if (!conversation) {
+                    conversation = new Conversation({ userId: userId, messages: [], title: message.substring(0, 30) });
+                }
             }
 
-            // Add user message
-            conversation.messages.push({
-                role: 'user',
-                content: message,
-                timestamp: new Date()
-            });
+            conversation.messages.push({ role: 'user', content: message, timestamp: new Date() });
 
-            // Get context for AI
-            // NEW, CORRECTED CODE
-            const context = await botController.buildContext(userId, conversation.messages);
+            let aiResponse;
+            // --- THE NEW CLASSIFICATION LOGIC ---
+            if (isPortfolioQuery(message)) {
+                // It's a portfolio question, build the full context
+                console.log("Portfolio-related query detected. Building full context...");
+                const context = await botController.buildContext(userId, conversation.messages);
+                aiResponse = await AIService.generateFinancialAdvice(context, message);
+            } else {
+                // It's a general question, use the simple /query endpoint
+                console.log("General query detected. Calling simple query endpoint...");
+                aiResponse = await AIService.askGeneralQuestion(message);
+            }
 
-            // Get AI response
-            const aiResponse = await AIService.generateFinancialAdvice(context, message);
-
-            // Add AI response to conversation
             conversation.messages.push({
                 role: 'assistant',
                 content: aiResponse.response,
@@ -57,8 +63,6 @@ const botController = {
                 success: true,
                 response: aiResponse.response,
                 conversationId: conversation._id,
-                metadata: aiResponse.metadata,
-                timestamp: new Date()
             });
 
         } catch (error) {
@@ -118,6 +122,26 @@ const botController = {
             });
         } catch (error) {
             res.status(500).json({ error: 'Failed to fetch conversations' });
+        }
+    },
+
+    // ADD THIS NEW FUNCTION
+    async getConversationById(req, res) {
+        try {
+            const { id } = req.params;
+            const conversation = await Conversation.findOne({
+                _id: id,
+                userId: req.user.id // Ensure user can only access their own conversations
+            });
+
+            if (!conversation) {
+                return res.status(404).json({ error: 'Conversation not found' });
+            }
+
+            res.json({ success: true, conversation: conversation });
+        } catch (error) {
+            console.error('Get Conversation by ID error:', error);
+            res.status(500).json({ error: 'Failed to fetch conversation' });
         }
     },
 
